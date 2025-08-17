@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jetquay Flight calculator</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; background: #000; color: #e7ecf3; }
+
+    /* ===== Visibility control for login gating ===== */
+    .requires-auth { display: none; }
+    body.authed .requires-auth { display: block; }
+    body.authed #loginOverlay { display: none; }
+
+    /* ===== Header / theme ===== */
+    header {
+      padding: 14px 18px; background:#000;
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+      border-bottom: 1px solid #1c1c1c;
+    }
+    h1{ color:#fff; font-size:18px; margin:0; }
+    h1 .brand{ color:#ffd400; font-weight:800; }
+    h1 .title-rest{ color:#ffffff; }
+
+    .modes { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
+    .pill {
+      background: #0f0f10; border: 1px solid #333; border-radius: 999px;
+      padding: 6px 10px; font-size: 12px; color: #cfcfcf; display: inline-flex; gap: 6px; align-items: center; text-decoration:none;
+    }
+    .pill.warn {
+      background:#331313; border-color:#7a2e2e; color:#ffb3b3;
+      font-size:16px; padding:10px 14px; font-weight:800; text-transform:uppercase; letter-spacing:0.3px;
+    }
+
+    .btn { cursor:pointer; background:#000; border:1px solid #333; color:#e7ecf3; border-radius:10px; padding:8px 12px; }
+    .btn.active { background:#111; border-color:#555; }
+
+    /* Make the three tabs equal width */
+    .tab-btn { flex: 1 1 0; text-align:center; }
+
+    main { max-width: 980px; margin: 0 auto; padding: 20px; }
+
+    .card { background: #111; border: 1px solid #262626; border-radius: 14px; padding: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+
+    form { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; align-items: end; }
+    label { font-size: 12px; color: #b7b7b7; display: block; margin-bottom: 6px; }
+
+    input, select, button { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #0f0f10; color: #e7ecf3; }
+    input::placeholder { color: #888; }
+
+    button { cursor: pointer; background: #000; border: 1px solid #333; font-weight: 600; }
+    button.secondary { background: #000; border: 1px solid #333; }
+    button[disabled] { opacity: .6; cursor: not-allowed; }
+
+    .row { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
+    .value { font-size: 18px; font-weight: 700; color: #fff; }
+    .muted { color: #a7a7a7; font-size: 12px; }
+    .hidden { display: none; }
+
+    /* === Bigger time displays for Flight 1 / Flight 2 in summary === */
+    #vFlight1, #vFlight2 { font-size: 22px; }
+    #vEta1, #vEta2 { font-size: 30px; font-weight: 800; line-height: 1.2; }
+
+    /* === Make requested stats bigger === */
+    #vDiff, #vGates, #vServiceAdj { font-size: 30px; font-weight: 900; }
+    /* NEW: Make Absolute Timing bigger */
+    #vAbsolute { font-size: 34px; font-weight: 900; }
+
+    /* ===== SOPS styles ===== */
+    .sops-title { font-weight: 800; margin: 4px 0 12px; }
+    .sops-grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    .sops-card { background:#0f0f10; border:1px solid #333; border-radius:14px; padding:16px; }
+    .sops-card h3 { margin:0 0 8px; font-size:16px; color:#fff; font-weight:700; }
+    .steps { counter-reset: step; display:grid; gap:10px; margin:0; padding:0; }
+    .steps li { list-style:none; display:flex; gap:12px; align-items:flex-start; background:#111; border:1px solid #262626; border-radius:12px; padding:10px 12px; }
+    .steps li::before {
+      counter-increment: step;
+      content: counter(step);
+      background:#ffd400; color:#000; font-weight:800;
+      display:inline-flex; align-items:center; justify-content:center;
+      width:26px; height:26px; min-width:26px; border-radius:999px; margin-top:1px;
+    }
+    .list { margin:0; padding-left:18px; line-height:1.45; color:#d8d8d8; }
+    .list li { margin:6px 0; }
+
+    @media (max-width: 900px) {
+      form { grid-template-columns: 1fr 1fr; }
+      .grid { grid-template-columns: 1fr 1fr; }
+      .sops-grid { grid-template-columns: 1fr; }
+      #vEta1, #vEta2 { font-size: 26px; }
+      #vDiff, #vGates, #vServiceAdj { font-size: 26px; }
+      #vAbsolute { font-size: 28px; }
+    }
+
+    /* ===== Login overlay ===== */
+    #loginOverlay {
+      position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center;
+      background: #000;
+      background-image:
+        radial-gradient(1200px 600px at 20% 10%, rgba(255,212,0,.06), transparent 60%),
+        radial-gradient(800px 400px at 80% 90%, rgba(255,212,0,.05), transparent 60%);
+      padding: 24px;
+    }
+    #loginBox {
+      width: min(92vw, 440px);
+      background:#0f0f10; border:1px solid #2b2b2b; border-radius:20px; padding:22px 20px;
+      box-shadow: 0 14px 40px rgba(0,0,0,.6);
+    }
+    #loginBrand { text-align:center; margin-bottom: 18px; line-height:1.1; }
+    #loginBrand .name { color:#ffd400; font-weight:800; font-size:30px; display:inline-block; }
+    #loginBrand .rest { color:#ffffff; font-weight:700; font-size:22px; margin-left:6px; display:inline-block; }
+    #loginBox label { display:block; font-size:13px; color:#bcbcbc; margin-bottom:6px; }
+
+    /* Make User ID & Password inputs longer (inside the box) */
+    #loginBox .stretch-input {
+      box-sizing: border-box;
+      width: calc(100% + 80px);   /* 20px left + 20px right card padding */
+      margin-left: 0px;
+      margin-right: 0px;
+    }
+
+    #loginBox input {
+      padding:12px 13px; border-radius:12px; border:1px solid #343434;
+      background:#121214; color:#fff; outline:none; font-size:14px;
+    }
+    #loginBox input:focus { border-color:#4a4a4a; }
+    #loginBox .row { display:grid; gap:14px; }
+    #loginBtn {
+      width:100%; padding:12px; border-radius:12px; border:1px solid #333;
+      background:#151515; color:#e7ecf3; font-weight:700; cursor:pointer; font-size:14px;
+    }
+    #loginBtn:hover { background:#1b1b1b; }
+    #loginErr {
+      margin-top:10px; color:#ffb3b3; background:#2a1212; border:1px solid #5a2a2a;
+      padding:8px 10px; border-radius:10px; font-size:12px; display:none; text-align:center;
+    }
+
+    /* Bottom logout container */
+    .logout-bottom { display:flex; justify-content:center; margin: 18px 0 40px; }
+  </style>
+</head>
+<body>
+
+  <!-- ===== LOGIN OVERLAY ===== -->
+  <div id="loginOverlay" aria-hidden="false">
+    <div id="loginBox">
+      <div id="loginBrand">
+        <span class="name">Jetquay</span>
+        <span class="rest">Flight calculator</span>
+      </div>
+      <form id="loginForm" autocomplete="off">
+        <div class="row">
+          <div>
+            <label for="loginUid">User ID</label>
+            <input id="loginUid" class="stretch-input" name="uid" placeholder="Enter User ID" required />
+          </div>
+          <div>
+            <label for="loginPw">Password</label>
+            <input id="loginPw" class="stretch-input" name="pw" type="password" placeholder="Enter Password" required />
+          </div>
+          <button id="loginBtn" type="submit">Sign in</button>
+          <div id="loginErr">Incorrect User ID or Password.</div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== APP (hidden until login) ===== -->
+  <header class="requires-auth">
+    <h1><span class="brand">Jetquay</span> <span class="title-rest">Flight calculator</span></h1>
+    <div class="modes" style="width:100%;">
+      <button id="btnArrival" class="btn tab-btn active" type="button">Arrival</button>
+      <button id="btnDeparture" class="btn tab-btn" type="button">Departure</button>
+      <button id="btnSops" class="btn tab-btn" type="button">SOPS</button>
+      <span id="apiBadge" class="pill">API: detecting…</span>
+      <!-- Top Logout REMOVED as requested -->
+    </div>
+  </header>
+
+  <main class="requires-auth">
+    <!-- ===== ARRIVAL ===== -->
+    <section id="arrivalSection">
+      <div class="card">
+        <form id="calcForm" autocomplete="off">
+          <div>
+            <label for="flight1">Flight 1</label>
+            <input id="flight1" name="flight1" required placeholder="e.g. SQ246" pattern="[A-Za-z]{2}\d{2,4}" />
+          </div>
+          <div>
+            <label for="date1">Date 1 (YYYY-MM-DD)</label>
+            <input id="date1" name="date1" type="date" required />
+          </div>
+          <div>
+            <label for="flight2">Flight 2</label>
+            <input id="flight2" name="flight2" required placeholder="e.g. SQ218" pattern="[A-Za-z]{2}\d{2,4}" />
+          </div>
+          <div>
+            <label for="date2">Date 2 (YYYY-MM-DD)</label>
+            <input id="date2" name="date2" type="date" required />
+          </div>
+          <div>
+            <label for="firstGate">First Gate (Letter A–G)</label>
+            <select id="firstGate" name="firstGate">
+              <option value="">—</option>
+              <option>A</option><option>B</option><option>C</option>
+              <option>D</option><option>E</option><option>F</option><option>G</option>
+            </select>
+          </div>
+          <div>
+            <label for="secondGate">Second Gate (e.g. A7, F60)</label>
+            <input id="secondGate" name="secondGate" placeholder="e.g. A7" pattern="^[A-Ga-g]\s*\d{1,2}$" title="Letter A–G followed by 1–2 digits, e.g. A7, F60" />
+          </div>
+
+          <div style="grid-column: 1 / -1;">
+            <label for="reason">Issues encountered</label>
+            <select id="reason" name="reason">
+              <option value="">— None —</option>
+              <option value="baggage_delay">Baggage delay (25)</option>
+              <option value="duty_office">Duty Office (35)</option>
+              <option value="customs_office">Customs Office (30)</option>
+              <option value="baggage_lost">Baggage Lost/Baggage damaged (27)</option>
+              <option value="not_docked">Plane has not docked (40)</option>
+              <option value="declaration_form">Declaration form (22)</option>
+              <option value="purchase_items">Purchase Items (45)</option>
+            </select>
+          </div>
+
+          <div style="grid-column: 1 / -1; display:flex; gap:10px; align-items:center;">
+            <button id="submitBtn" type="submit">Calculate</button>
+            <span id="status" class="muted"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ===== DEPARTURE ===== -->
+    <section id="departureSection" class="hidden">
+      <div class="card">
+        <form id="depForm" autocomplete="off">
+          <div>
+            <label for="depFlight1">Flight 1</label>
+            <input id="depFlight1" name="depFlight1" required placeholder="e.g. SQ246" pattern="[A-Za-z]{2}\d{2,4}" />
+          </div>
+          <div>
+            <label for="depDate1">Date 1 (YYYY-MM-DD)</label>
+            <input id="depDate1" name="depDate1" type="date" required />
+          </div>
+
+          <div>
+            <label for="depHHMM">Hours (HHMM)</label>
+            <input id="depHHMM" name="depHHMM" required placeholder="0000"
+                   pattern="^([01]\d|2[0-3])[0-5]\d$" title="HHMM in 24h format, e.g. 0000, 1315, 2359" />
+          </div>
+          <div>
+            <label for="depDate2">Date 2 (YYYY-MM-DD)</label>
+            <input id="depDate2" name="depDate2" type="date" required />
+          </div>
+
+          <div>
+            <label for="depFirstGate">First Gate (A–G)</label>
+            <select id="depFirstGate" name="depFirstGate">
+              <option value="">—</option>
+              <option>A</option><option>B</option><option>C</option>
+              <option>D</option><option>E</option><option>F</option><option>G</option>
+            </select>
+          </div>
+          <div>
+            <label for="depSecondGate">Second Gate (T1–T4)</label>
+            <select id="depSecondGate" name="depSecondGate">
+              <option value="">—</option>
+              <option value="T1">T1</option>
+              <option value="T2">T2</option>
+              <option value="T3">T3</option>
+              <option value="T4">T4</option>
+            </select>
+          </div>
+
+          <div style="grid-column: 1 / -1;">
+            <label for="depReason">Issues encountered</label>
+            <select id="depReason" name="depReason">
+              <option value="">— None —</option>
+              <option value="baggage_delay">Baggage delay (25)</option>
+              <option value="duty_office">Duty Office (35)</option>
+              <option value="customs_office">Customs Office (30)</option>
+              <option value="baggage_lost">Baggage Lost/Baggage damaged (27)</option>
+              <option value="not_docked">Plane has not docked (40)</option>
+              <option value="declaration_form">Declaration form (22)</option>
+              <option value="purchase_items">Purchase Items (45)</option>
+            </select>
+          </div>
+
+          <div style="grid-column: 1 / -1; display:flex; gap:10px; align-items:center;">
+            <button id="depSubmit" type="submit">Calculate</button>
+            <span id="depStatus" class="muted"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ===== SOPS ===== -->
+    <section id="sopsSection" class="hidden">
+      <div class="card">
+        <div class="sops-title">SOPS — Step-by-step & Reference</div>
+        <span class="pill" style="display:block; margin:8px 0 16px; border-color:#333;">ALWAYS take note of the gate — no matter the time!</span>
+
+        <div class="sops-grid">
+          <div class="sops-card">
+            <h3>Airport — T3 (Quick Notes)</h3>
+            <ol class="steps">
+              <li>Smoking area is beside McDonald’s; you must exit to access it.</li>
+              <li>GST refund: in transit you can take cash; in public area it is card only.</li>
+            </ol>
+          </div>
+
+          <div class="sops-card">
+            <h3>Quayside — Arrival</h3>
+            <ol class="steps">
+              <li>Escort passengers from gate to CIP terminal for immigration, then hand over to driver.</li>
+              <li>One hour before STD: call CIOC (flight number, number of passengers, staff clearing) and APO (flight ARR/DEP).</li>
+              <li>Be at the gate 15 minutes before flight arrival.</li>
+              <li>Ask if there is checked baggage. If yes, photo the baggage tags and post to the group chat (flight number, number of checked bags). If none, post “flight number, no bag”.</li>
+              <li>If there are additional passengers, photo their passports, send to OC for approval, then call the operator to inform.</li>
+              <li>At the CIP terminal, call the driver to confirm they are taking the passengers.</li>
+            </ol>
+          </div>
+
+          <div class="sops-card">
+            <h3>Quayside — Departure</h3>
+            <ol class="steps">
+              <li>On arrival, bring passports to OC for verification.</li>
+              <li>Ask about checked bags and whether GST refund is needed (cash or card).</li>
+              <li>Weigh baggage and post to the group chat (flight code, number of bags, GST refund yes/no).</li>
+              <li>If GST refund applies for checked bags, process at CIP.</li>
+              <li>Proceed to the check-in counter for check-in.</li>
+              <li>Paste bag barcode labels on paper; if many, overlapping is fine but numbers and barcodes must be visible.</li>
+              <li>Send bags at least 1 hour before STD.</li>
+              <li>Two hours before STD: call CIOC (flight number, passengers, staff clearing) and APO (flight ARR/DEP).</li>
+            </ol>
+          </div>
+
+          <div class="sops-card">
+            <h3>Gateway — Arrival</h3>
+            <ol class="steps">
+              <li>Be at the gate 15 minutes before arrival.</li>
+              <li>Photo the signage and gate and send to the group chat with airline, GW, ARR, and gate.</li>
+              <li>Ask about checked baggage (no baggage update is needed in the chat).</li>
+              <li>Photo the vehicles and update the group chat with number of passengers, number of checked bags, and CP.</li>
+            </ol>
+          </div>
+
+          <div class="sops-card">
+            <h3>Gateway — Departure</h3>
+            <ol class="steps">
+              <li>Be at the door 3 hours before departure time.</li>
+              <li>Call MBS LCC for driver details.</li>
+              <li>Call the driver for pick-up time and ask them to update once passengers are onboard.</li>
+              <li>Photo the signage with the door and update Optimax and the group chat with airline, GWDEP, terminal, door number, and POB.</li>
+              <li>For GST refund: checked bag in public area; hand carry in transit. Cash can be taken in transit.</li>
+              <li>Advise passengers on gate and boarding time.</li>
+            </ol>
+          </div>
+
+          <div class="sops-card">
+            <h3>Sea Crew — Arrival</h3>
+            <ol class="steps">
+              <li>Be at the gate 15 minutes before arrival.</li>
+              <li>Photo signage and gate and send to the group chat with airline, SC, ARR, and gate.</li>
+              <li>Ask about checked baggage (no baggage update is needed in the chat).</li>
+              <li>Photo the vehicles and update the group chat with number of passengers, number of checked bags, and CP.</li>
+            </ol>
+          </div>
+
+          <div class="sops-card">
+            <h3>Airline Gateway — Departure</h3>
+            <ol class="steps">
+              <li>Be at the gate 2.5–3 hours before flight time.</li>
+              <li>Post in the airline group chat who you are, the passenger name, and the flight.</li>
+              <li>Go to the assigned row and inform staff you are handling the flight.</li>
+              <li>No driver contact is needed for airline flights.</li>
+              <li>Additional passengers do not require an update.</li>
+              <li>Ask passengers if they prefer to board first or last; check with counter for the first/last boarding time.</li>
+              <li>Escort passengers to their seats, take a photo, and update the gateway group chat.</li>
+              <li>In the airline group chat, post: “Passengers handed over to the purser”.</li>
+            </ol>
+          </div>
+
+          <div class="sops-card">
+            <h3>Lounges</h3>
+            <ul class="list">
+              <li>STARLUX — SATS Premium Lounge</li>
+              <li>All Nippon Airways (ANA) — SilverKris Lounge</li>
+              <li>Singapore Airlines — KrisFlyer Gold Lounge</li>
+            </ul>
+          </div>
+
+          <div class="sops-card">
+            <h3>Pick-up Points — T1</h3>
+            <ul class="list">
+              <li>GWARR — Lobby A, Level B2M (for C Gates)</li>
+              <li>GWARR — Lobby B, Level B2M (for D Gates)</li>
+              <li>SCARR — Coach Bay, turn left (near Lobby B)</li>
+            </ul>
+          </div>
+
+          <div class="sops-card">
+            <h3>Pick-up Points — T2</h3>
+            <ul class="list">
+              <li>GWARR — Arrival Hall Door 6 (for F Gates)</li>
+              <li>GWARR — Arrival Hall Door 3 (for E Gates)</li>
+              <li>SCARR — Coach Bay, turn left (far end of F)</li>
+            </ul>
+          </div>
+
+          <div class="sops-card">
+            <h3>Pick-up Points — T3</h3>
+            <ul class="list">
+              <li>GWARR — B1 Door 1 (for A Gates)</li>
+              <li>GWARR — B1 Door 3 (for B Gates)</li>
+              <li>SCARR — Coach Bay, turn right (far end of A)</li>
+            </ul>
+          </div>
+
+          <div class="sops-card">
+            <h3>Pick-up Points — T4</h3>
+            <ul class="list">
+              <li>GWARR — Arrival Hall Door 3</li>
+              <li>SCARR — Coach Bay — lift down to Basement, then lift up to Level 1</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Summary (shared) ===== -->
+    <div class="row">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+          <strong>Summary</strong>
+          <span id="messagePill" class="pill hidden" title="Decision"></span>
+          <span id="adjPill" class="pill hidden" title="Adjusted decision (based on selection)"></span>
+        </div>
+        <div class="grid">
+          <div>
+            <div class="muted">Flight 1</div>
+            <div class="value" id="vFlight1">—</div>
+            <div class="muted" id="vEta1">—</div>
+          </div>
+          <div>
+            <div class="muted">Flight 2</div>
+            <div class="value" id="vFlight2">—</div>
+            <div class="muted" id="vEta2">—</div>
+          </div>
+          <div>
+            <div class="muted">Time between flights (mins)</div>
+            <div class="value" id="vDiff">—</div>
+          </div>
+          <div>
+            <div class="muted">Delays Added (min)</div>
+            <div class="value" id="vDelay">—</div>
+          </div>
+          <div>
+            <div class="muted">Travel time (mins)</div>
+            <div class="value" id="vGates">—</div>
+            <div class="muted" id="vSkytrain">—</div>
+          </div>
+          <div>
+            <div class="muted">Service Time (server)</div>
+            <div class="value" id="vService">—</div>
+          </div>
+          <div>
+            <div class="muted">Service Time (adjusted) (mins)</div>
+            <div class="value" id="vServiceAdj">—</div>
+          </div>
+          <div>
+            <div class="muted">Absolute Timing (min)</div>
+            <div class="value" id="vAbsolute">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Bottom Logout ===== -->
+    <div class="logout-bottom">
+      <button id="btnLogoutBottom" class="btn" type="button" title="Sign out">Logout</button>
+    </div>
+  </main>
+
+  <!-- ===== Scripts (no optional chaining) ===== -->
+  <script>
+    /* ---------- Login Gate ---------- */
+    (function LoginGate(){
+      function $(id){ return document.getElementById(id); }
+      var form = $('loginForm'), err = $('loginErr'), uid = $('loginUid'), pw = $('loginPw');
+
+      try { if (sessionStorage.getItem('jq_auth') === 'ok') document.body.classList.add('authed'); } catch(e){}
+
+      function showError(){
+        err.style.display = 'block';
+        var box = $('loginBox');
+        if (box && box.animate) {
+          box.animate([
+            { transform: 'translateX(0)' }, { transform: 'translateX(-6px)' },
+            { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }
+          ], { duration: 200 });
+        }
+      }
+
+      form.addEventListener('submit', function(e){
+        e.preventDefault();
+        var userOk = ((uid.value || '').trim().toLowerCase() === 'jetquayops');
+        var passOk = ((pw.value || '').trim() === '23456');
+        if (userOk && passOk) {
+          try { sessionStorage.setItem('jq_auth','ok'); } catch(e){}
+          document.body.classList.add('authed');
+        } else {
+          showError();
+          pw.value = '';
+          pw.focus();
+        }
+      });
+
+      uid.addEventListener('input', function(){ err.style.display = 'none'; });
+      pw.addEventListener('input', function(){ err.style.display = 'none'; });
+    })();
+  </script>
+
+  <script>
+    /* ---------- App Logic ---------- */
+    (function App(){
+      function $(id){ return document.getElementById(id); }
+
+      // API base (works with file:// or when served by Express)
+      var API_BASE = (location.protocol === 'file:' ? 'http://localhost:3000'
+                    : (location.port ? (location.protocol + '//' + location.hostname + ':' + location.port)
+                                     : (location.protocol + '//' + location.hostname)));
+      var SAME_ORIGIN = (location.protocol.indexOf('http') === 0 && location.port === '3000');
+      var BASE = SAME_ORIGIN ? '' : API_BASE;
+
+      function setBadge(t, warn){
+        if (warn === void 0) warn = false;
+        var el = $('apiBadge');
+        if (!el) return;
+        el.textContent = t;
+        if (warn) el.classList.add('warn'); else el.classList.remove('warn');
+      }
+      setBadge('API: ' + (BASE || '(same-origin)'));
+
+      // Tabs
+      function setMode(mode){
+        var a = $('arrivalSection'), d = $('departureSection'), s = $('sopsSection');
+        var ba = $('btnArrival'), bd = $('btnDeparture'), bs = $('btnSops');
+        if (mode === 'arrival') {
+          a.classList.remove('hidden'); d.classList.add('hidden'); s.classList.add('hidden');
+          ba.classList.add('active'); bd.classList.remove('active'); bs.classList.remove('active');
+        } else if (mode === 'departure') {
+          d.classList.remove('hidden'); a.classList.add('hidden'); s.classList.add('hidden');
+          bd.classList.add('active'); ba.classList.remove('active'); bs.classList.remove('active');
+        } else {
+          s.classList.remove('hidden'); a.classList.add('hidden'); d.classList.add('hidden');
+          bs.classList.add('active'); ba.classList.remove('active'); bd.classList.remove('active');
+        }
+      }
+      $('btnArrival').addEventListener('click', function(){ setMode('arrival'); });
+      $('btnDeparture').addEventListener('click', function(){ setMode('departure'); });
+      $('btnSops').addEventListener('click', function(){ setMode('sops'); });
+
+      // Logout (bottom only)
+      function doLogout(){
+        try { sessionStorage.removeItem('jq_auth'); } catch(e){}
+        location.reload();
+      }
+      $('btnLogoutBottom').addEventListener('click', doLogout);
+
+      // Defaults for dates
+      document.addEventListener('DOMContentLoaded', function(){
+        var d = new Date();
+        var yyyy = d.getFullYear();
+        var mm = String(d.getMonth() + 1).padStart(2, '0');
+        var dd = String(d.getDate()).padStart(2, '0');
+        var today = yyyy + '-' + mm + '-' + dd;
+        $('date1').value = today; $('date2').value = today;
+        $('depDate1').value = today; $('depDate2').value = today;
+      });
+
+      // Utils
+      function toLocalTime(iso) {
+        if (!iso) return '—';
+        try { return new Date(iso).toLocaleString(undefined, { hour12:false }); }
+        catch(e){ return iso; }
+      }
+      function setStatus(msg) { $('status').textContent = msg || ''; }
+      function setDepStatus(msg) { $('depStatus').textContent = msg || ''; }
+      async function fetchWithTimeout(url, opts, timeoutMs) {
+        if (opts === void 0) opts = {};
+        if (timeoutMs === void 0) timeoutMs = 15000;
+        var ctrl = new AbortController();
+        var t = setTimeout(function(){ ctrl.abort(); }, timeoutMs);
+        try { var res = await fetch(url, Object.assign({}, opts, { signal: ctrl.signal })); clearTimeout(t); return res; }
+        catch (e) { clearTimeout(t); throw e; }
+      }
+
+      /* ===== ARRIVAL ===== */
+      var SERVICE_MAP = {
+        baggage_delay: 25, duty_office: 35, customs_office: 30,
+        baggage_lost: 27, not_docked: 40, declaration_form: 22, purchase_items: 45
+      };
+      var lastData = null;
+
+      function fillUI(data) {
+        lastData = data;
+
+        var f1 = data.flight1 || {}, f2 = data.flight2 || {};
+        $('vFlight1').textContent = f1.flight || '—';
+        $('vEta1').textContent = f1.estimated_arrival ? toLocalTime(f1.estimated_arrival) : '—';
+
+        $('vFlight2').textContent = f2.flight || '—';
+        $('vEta2').textContent = f2.estimated_arrival ? toLocalTime(f2.estimated_arrival) : '—';
+
+        $('vDiff').textContent = (data.difference_minutes != null) ? data.difference_minutes : '—';
+        $('vDelay').textContent = (data.delay_timings_minutes != null) ? data.delay_timings_minutes : '—';
+        $('vGates').textContent = (data.gates && data.gates.minutes != null) ? data.gates.minutes : '—';
+        $('vSkytrain').textContent = (data.gates && (data.gates.skytrain || data.gates.outside != null))
+          ? ('Skytrain: ' + (data.gates.skytrain || ('Outside ' + data.gates.outside + ' min')))
+          : ' ';
+        $('vService').textContent = (data.service_time_minutes != null) ? data.service_time_minutes : '—';
+        $('vAbsolute').textContent = (data.absolute_timing_minutes != null) ? data.absolute_timing_minutes : '—';
+
+        var serverPill = $('messagePill');
+        if (data.message) { serverPill.textContent = data.message; serverPill.classList.remove('hidden'); serverPill.classList.add('warn'); }
+        else { serverPill.textContent = 'OK'; serverPill.classList.remove('hidden'); serverPill.classList.remove('warn'); }
+
+        updateAdjustedDecision();
+      }
+
+      function getAdjustedServiceTime() {
+        var key = $('reason').value;
+        if (!key) return null;
+        return SERVICE_MAP.hasOwnProperty(key) ? SERVICE_MAP[key] : null;
+      }
+
+      function updateAdjustedDecision() {
+        var adjusted = getAdjustedServiceTime();
+        var adjSpan = $('vServiceAdj');
+        var adjPill = $('adjPill');
+
+        if (!lastData) { adjSpan.textContent = '—'; adjPill.classList.add('hidden'); return; }
+        if (adjusted === null) { adjSpan.textContent = '—'; adjPill.classList.add('hidden'); return; }
+
+        adjSpan.textContent = adjusted;
+        var abs = Number(lastData.absolute_timing_minutes);
+        if (isFinite(abs) && abs < adjusted) {
+          adjPill.textContent = 'Please inform OC (adjusted)';
+          adjPill.classList.remove('hidden'); adjPill.classList.add('warn');
+        } else {
+          adjPill.textContent = 'OK (adjusted)';
+          adjPill.classList.remove('hidden'); adjPill.classList.remove('warn');
+        }
+      }
+
+      $('reason').addEventListener('change', updateAdjustedDecision);
+
+      $('calcForm').addEventListener('submit', async function(e){
+        e.preventDefault();
+        setStatus('Calculating…');
+        var btn = $('submitBtn'); btn.disabled = true;
+
+        var flight1 = $('flight1').value.trim().toUpperCase();
+        var date1 = $('date1').value;
+        var flight2 = $('flight2').value.trim().toUpperCase();
+        var date2 = $('date2').value;
+        var firstGate = $('firstGate').value.trim().toUpperCase();
+        var secondGate = $('secondGate').value.trim().toUpperCase().replace(/\s+/g, '');
+
+        if (firstGate && !/^[A-G]$/.test(firstGate)) { alert('First Gate must be a single letter A–G.'); setStatus(''); btn.disabled = false; return; }
+        if (secondGate && !/^[A-G]\d{1,2}$/.test(secondGate)) { alert('Second Gate must be like A7 or F60 (A–G + 1–2 digits).'); setStatus(''); btn.disabled = false; return; }
+
+        var params = new URLSearchParams({ flight1:flight1, date1:date1, flight2:flight2, date2:date2 });
+        if (firstGate)  params.set('firstGate', firstGate);
+        if (secondGate) params.set('secondGate', secondGate);
+
+        try {
+          var res = await fetchWithTimeout(BASE + '/api/calculate?' + params.toString());
+          var data = await res.json().catch(function(){ return {}; });
+          if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+          fillUI(data);
+          setStatus('Done');
+        } catch (err) {
+          var emsg = (err && err.name === 'AbortError')
+            ? 'Request timed out. Is the server running on http://localhost:3000?'
+            : ((err && err.message) || String(err));
+          setStatus('');
+          alert('Error: ' + emsg);
+          if (location.protocol === 'file:') setBadge('API: http://localhost:3000 (opened via file://)', true);
+        } finally { btn.disabled = false; }
+      });
+
+      /* ===== DEPARTURE ===== */
+      function ymdHmToSgtIso(ymd, hhmm) {
+        var hh = hhmm.slice(0,2), mm = hhmm.slice(2,4);
+        return ymd + 'T' + hh + ':' + mm + ':00+08:00';
+      }
+      function depExtractAirline(obj){
+        var name = '';
+        if (obj) {
+          if (obj.airline_name) name = obj.airline_name;
+          else if (obj.airline && obj.airline.name) name = obj.airline.name;
+          else if (obj.operator && obj.operator.name) name = obj.operator.name;
+        }
+        return String(name).toLowerCase();
+      }
+      function depExtractAircraft(obj){
+        var model = '';
+        if (obj) {
+          if (obj.aircraft && obj.aircraft.model && obj.aircraft.model.text) model = obj.aircraft.model.text;
+          else if (obj.aircraft && obj.aircraft.model) model = obj.aircraft.model;
+          else if (obj.aircraft && obj.aircraft.type) model = obj.aircraft.type;
+          else if (obj.model) model = obj.model;
+        }
+        return String(model).toLowerCase().trim();
+      }
+      function depDelayFor(obj){
+        var airline = depExtractAirline(obj);
+        var aircraft = depExtractAircraft(obj);
+        var add = 0;
+        var airlineAdd10 = ['scoot', 'air asia', 'airasia', 'china eastern', 'china easten', 'indigo', 'air india'];
+        for (var i=0; i<airlineAdd10.length; i++){
+          if (airline.indexOf(airlineAdd10[i]) !== -1) { add += 10; break; }
+        }
+        var aircraftAdd10Contains = ['767-300er', '767-400er'];
+        for (var j=0; j<aircraftAdd10Contains.length; j++){
+          if (aircraft.indexOf(aircraftAdd10Contains[j]) !== -1) { add += 10; break; }
+        }
+        if (aircraft === 'a320') add += 10; // exact only
+        return add;
+      }
+      // Outside minutes for departure: 02:00–04:59 => 6; otherwise => 7
+      function depSkytrainOutsideForHHMM(hhmm){
+        var hh = parseInt(hhmm.slice(0,2), 10) || 0;
+        var mm = parseInt(hhmm.slice(2,4), 10) || 0;
+        var minutes = hh*60 + mm;
+        if (minutes >= 120 && minutes < 300) return 6;
+        return 7;
+      }
+      function depGateReductionMinutes(firstGate, secondGate, outside){
+        if (!firstGate || !secondGate) return { minutes:0, outside: outside, note: 'Missing gate' };
+        var L1 = String(firstGate).trim().toUpperCase();
+        var T  = String(secondGate).trim().toUpperCase(); // T1–T4
+        if (!/^[A-G]$/.test(L1) || !/^T[1-4]$/.test(T)) return { minutes:0, outside: outside, note: 'Invalid gates' };
+
+        var mins = 0;
+        if (L1 === 'A' || L1 === 'B') {
+          if (T === 'T1' || T === 'T2') mins = outside + 3;
+          else if (T === 'T3') mins = 2;
+          else if (T === 'T4') mins = 24;
+        } else if (L1 === 'C' || L1 === 'D') {
+          if (T === 'T1') mins = 2;
+          else if (T === 'T2') mins = outside + 4;
+          else if (T === 'T3') mins = outside + 3;
+          else if (T === 'T4') mins = 20;
+        } else if (L1 === 'E' || L1 === 'F') {
+          if (T === 'T1') mins = outside + 4;
+          else if (T === 'T2') mins = 2;
+          else if (T === 'T3') mins = 4;
+          else if (T === 'T4') mins = 20;
+        } else if (L1 === 'G') {
+          if (T === 'T1' || T === 'T2') mins = 20;
+          else if (T === 'T3') mins = 24;
+          else if (T === 'T4') mins = 2;
+        }
+        return { minutes: mins, outside: outside, note: null };
+      }
+
+      var depLastData = null;
+
+      function fillUI_Departure(data) {
+        depLastData = data;
+
+        var f1 = data.flight1 || {}, f2 = data.flight2 || {};
+        $('vFlight1').textContent = f1.flight || '—';
+        $('vEta1').textContent = f1.estimated_arrival ? toLocalTime(f1.estimated_arrival) : '—';
+        $('vFlight2').textContent = f2.flight || '—';
+        $('vEta2').textContent = f2.estimated_arrival ? toLocalTime(f2.estimated_arrival) : '—';
+
+        $('vDiff').textContent = (data.difference_minutes != null) ? data.difference_minutes : '—';
+        $('vDelay').textContent = (data.delay_timings_minutes != null) ? data.delay_timings_minutes : '—';
+        $('vGates').textContent = (data.gates && data.gates.minutes != null) ? data.gates.minutes : '—';
+        $('vSkytrain').textContent = (data.gates && data.gates.outside != null) ? ('Outside: ' + data.gates.outside + ' min') : ' ';
+        $('vService').textContent = (data.service_time_minutes != null) ? data.service_time_minutes : '—';
+        $('vAbsolute').textContent = (data.absolute_timing_minutes != null) ? data.absolute_timing_minutes : '—';
+
+        var pill = $('messagePill');
+        if (data.message) { pill.textContent = data.message; pill.classList.remove('hidden'); pill.classList.add('warn'); }
+        else { pill.textContent = 'OK'; pill.classList.remove('warn'); pill.classList.remove('hidden'); }
+
+        var adjKey = $('depReason').value;
+        var adj = null;
+        if (adjKey) {
+          var map = {baggage_delay:25,duty_office:35,customs_office:30,baggage_lost:27,not_docked:40,declaration_form:22,purchase_items:45};
+          adj = map.hasOwnProperty(adjKey) ? map[adjKey] : null;
+        }
+        var adjSpan = $('vServiceAdj');
+        var adjPill = $('adjPill');
+        if (adj === null) { adjSpan.textContent = '—'; adjPill.classList.add('hidden'); }
+        else {
+          adjSpan.textContent = adj;
+          var abs = Number(data.absolute_timing_minutes);
+          if (isFinite(abs) && abs < adj) {
+            adjPill.textContent = 'Please inform OC (adjusted)';
+            adjPill.classList.remove('hidden'); adjPill.classList.add('warn');
+          } else {
+            adjPill.textContent = 'OK (adjusted)';
+            adjPill.classList.remove('hidden'); adjPill.classList.remove('warn');
+          }
+        }
+      }
+
+      $('depReason').addEventListener('change', function(){
+        if (!depLastData) return;
+        fillUI_Departure(JSON.parse(JSON.stringify(depLastData)));
+      });
+
+      function ymdHmValid(hhmm){ return /^([01]\d|2[0-3])[0-5]\d$/.test(hhmm); }
+
+      $('depForm').addEventListener('submit', async function(e){
+        e.preventDefault();
+        setDepStatus('Calculating…');
+        var btn = $('depSubmit'); btn.disabled = true;
+
+        var flight1 = $('depFlight1').value.trim().toUpperCase();
+        var date1 = $('depDate1').value;
+        var date2 = $('depDate2').value;
+        var hhmm = $('depHHMM').value.trim();
+        var firstGate = $('depFirstGate').value.trim().toUpperCase();
+        var secondGate = $('depSecondGate').value.trim().toUpperCase();
+
+        if (!ymdHmValid(hhmm)) { alert('Hours must be HHMM (0000–2359)'); setDepStatus(''); btn.disabled=false; return; }
+        if (firstGate && !/^[A-G]$/.test(firstGate)) { alert('First Gate must be A–G'); setDepStatus(''); btn.disabled=false; return; }
+        if (secondGate && !/^T[1-4]$/.test(secondGate)) { alert('Second Gate must be T1–T4'); setDepStatus(''); btn.disabled=false; return; }
+
+        try {
+          // Get Flight 1 ETA from server (SGT)
+          var res = await fetchWithTimeout(BASE + '/api/flight?' + new URLSearchParams({ flight: flight1, date: date1 }).toString());
+          var payload = await res.json().catch(function(){ return {}; });
+          if (!res.ok) throw new Error((payload && payload.error) || ('HTTP ' + res.status));
+
+          var eta1Iso = payload.estimated_arrival;
+          var refIso = ymdHmToSgtIso(date2, hhmm);
+
+          var baseDiff = Math.round(Math.abs(new Date(eta1Iso) - new Date(refIso)) / 60000);
+          var dly1 = depDelayFor(payload.flightData || {});
+          var diffWithDelays = baseDiff + dly1;
+
+          var outside = depSkytrainOutsideForHHMM(hhmm);
+          var g = depGateReductionMinutes(firstGate, secondGate, outside);
+          var gatesMin = g.minutes || 0;
+
+          var absolute = Math.round(diffWithDelays - gatesMin);
+          var message = (absolute < 57) ? 'Please inform OC' : undefined;  // threshold = 57
+
+          var result = {
+            flight1: { flight: flight1, estimated_arrival: eta1Iso },
+            flight2: { flight: 'TIME ' + hhmm, estimated_arrival: refIso },
+            difference_minutes: baseDiff,
+            delay_timings_minutes: dly1,
+            difference_with_delays_minutes: diffWithDelays,
+            service_time_minutes: 57, // server time = 57
+            gates: { firstGate: firstGate || null, secondGate: secondGate || null, minutes: gatesMin, outside: outside, note: g.note },
+            absolute_timing_minutes: absolute,
+            message: message
+          };
+
+          fillUI_Departure(result);
+          setDepStatus('Done');
+        } catch (err) {
+          var emsg = (err && err.name === 'AbortError')
+            ? 'Request timed out. Is the server running on http://localhost:3000?'
+            : ((err && err.message) || String(err));
+          setDepStatus('');
+          alert('Error: ' + emsg);
+          if (location.protocol === 'file:') setBadge('API: http://localhost:3000 (opened via file://)', true);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+    })();
+  </script>
+</body>
+</html>
