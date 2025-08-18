@@ -139,6 +139,11 @@
 
     /* Bottom logout container */
     .logout-bottom { display:flex; justify-content:center; margin: 18px 0 40px; }
+
+    /* ====== Small layout polish for inputs inside grid cells ====== */
+    form > div { min-width: 0; }
+    input, select, button { box-sizing: border-box; font-size: 14px; }
+    @media (max-width: 900px) { input, select, button { padding: 12px; } }
   </style>
 </head>
 <body>
@@ -601,6 +606,18 @@
         catch (e) { clearTimeout(t); throw e; }
       }
 
+      /* === NEW: SGT UI but query previous UTC day for FR24 === */
+      function offsetYmd(ymd, days) {
+        try {
+          var parts = String(ymd).split('-');
+          var y = parseInt(parts[0], 10), m = parseInt(parts[1], 10), d = parseInt(parts[2], 10);
+          var dt = new Date(Date.UTC(y, m - 1, d));
+          dt.setUTCDate(dt.getUTCDate() + (days || 0));
+          var pad = function(n){ return String(n).padStart(2,'0'); };
+          return dt.getUTCFullYear() + '-' + pad(dt.getUTCMonth() + 1) + '-' + pad(dt.getUTCDate());
+        } catch(e) { return ymd; }
+      }
+
       /* ===== ARRIVAL ===== */
       var SERVICE_MAP = {
         baggage_delay: 25, duty_office: 35, customs_office: 30,
@@ -676,7 +693,11 @@
         if (firstGate && !/^[A-G]$/.test(firstGate)) { alert('First Gate must be a single letter A–G.'); setStatus(''); btn.disabled = false; return; }
         if (secondGate && !/^[A-G]\d{1,2}$/.test(secondGate)) { alert('Second Gate must be like A7 or F60 (A–G + 1–2 digits).'); setStatus(''); btn.disabled = false; return; }
 
-        var params = new URLSearchParams({ flight1:flight1, date1:date1, flight2:flight2, date2:date2 });
+        // Shift query to previous UTC day; UI still shows selected date
+        var apiDate1 = offsetYmd(date1, -1);
+        var apiDate2 = offsetYmd(date2, -1);
+
+        var params = new URLSearchParams({ flight1:flight1, date1:apiDate1, flight2:flight2, date2:apiDate2 });
         if (firstGate)  params.set('firstGate', firstGate);
         if (secondGate) params.set('secondGate', secondGate);
 
@@ -840,8 +861,9 @@
         if (secondGate && !/^T[1-4]$/.test(secondGate)) { alert('Second Gate must be T1–T4'); setDepStatus(''); btn.disabled=false; return; }
 
         try {
-          // Get Flight 1 ETA from server (SGT)
-          var res = await fetchWithTimeout(BASE + '/api/flight?' + new URLSearchParams({ flight: flight1, date: date1 }).toString());
+          // Get Flight 1 ETA from server (query previous UTC day to align with FR24)
+          var apiDepDate1 = offsetYmd(date1, -1);
+          var res = await fetchWithTimeout(BASE + '/api/flight?' + new URLSearchParams({ flight: flight1, date: apiDepDate1 }).toString());
           var payload = await res.json().catch(function(){ return {}; });
           if (!res.ok) throw new Error((payload && payload.error) || ('HTTP ' + res.status));
 
