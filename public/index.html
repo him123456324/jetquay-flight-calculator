@@ -550,7 +550,7 @@
         el.textContent = t;
         if (warn) el.classList.add('warn'); else el.classList.remove('warn');
       }
-      setBadge('API: ' + (BASE || '(same-origin)'));
+      setBadge('API: ' + (BASE || '(same-origin)') + ' • SGT mode');
 
       // Tabs
       function setMode(mode){
@@ -592,8 +592,10 @@
       // Utils
       function toLocalTime(iso) {
         if (!iso) return '—';
-        try { return new Date(iso).toLocaleString(undefined, { hour12:false }); }
-        catch(e){ return iso; }
+        try {
+          // Always show in Singapore time for consistency
+          return new Date(iso).toLocaleString('en-SG', { hour12:false, timeZone: 'Asia/Singapore' });
+        } catch(e){ return iso; }
       }
       function setStatus(msg) { $('status').textContent = msg || ''; }
       function setDepStatus(msg) { $('depStatus').textContent = msg || ''; }
@@ -606,7 +608,7 @@
         catch (e) { clearTimeout(t); throw e; }
       }
 
-      /* === NEW: SGT UI but query previous UTC day for FR24 === */
+      /* Legacy helper: previously used to “-1 day” for UTC. Kept for compatibility but not used now. */
       function offsetYmd(ymd, days) {
         try {
           var parts = String(ymd).split('-');
@@ -693,9 +695,9 @@
         if (firstGate && !/^[A-G]$/.test(firstGate)) { alert('First Gate must be a single letter A–G.'); setStatus(''); btn.disabled = false; return; }
         if (secondGate && !/^[A-G]\d{1,2}$/.test(secondGate)) { alert('Second Gate must be like A7 or F60 (A–G + 1–2 digits).'); setStatus(''); btn.disabled = false; return; }
 
-        // Shift query to previous UTC day; UI still shows selected date
-        var apiDate1 = offsetYmd(date1, -1);
-        var apiDate2 = offsetYmd(date2, -1);
+        // ✅ Pass the exact SGT dates selected; backend should handle UTC window mapping.
+        var apiDate1 = date1;
+        var apiDate2 = date2;
 
         var params = new URLSearchParams({ flight1:flight1, date1:apiDate1, flight2:flight2, date2:apiDate2 });
         if (firstGate)  params.set('firstGate', firstGate);
@@ -861,8 +863,9 @@
         if (secondGate && !/^T[1-4]$/.test(secondGate)) { alert('Second Gate must be T1–T4'); setDepStatus(''); btn.disabled=false; return; }
 
         try {
-          // Get Flight 1 ETA from server (query previous UTC day to align with FR24)
-          var apiDepDate1 = offsetYmd(date1, -1);
+          // ✅ Pass the exact SGT date for departure too; backend handles UTC.
+          var apiDepDate1 = date1;
+
           var res = await fetchWithTimeout(BASE + '/api/flight?' + new URLSearchParams({ flight: flight1, date: apiDepDate1 }).toString());
           var payload = await res.json().catch(function(){ return {}; });
           if (!res.ok) throw new Error((payload && payload.error) || ('HTTP ' + res.status));
